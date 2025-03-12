@@ -9,8 +9,18 @@ import io
 import typing
 from typing import List, Optional, Union
 import zlib
-import brotli
 import httpx
+
+# Brotli support is optional
+# The C bindings in `brotli` are recommended for CPython.
+# The CFFI bindings in `brotlicffi` are recommended for PyPy and everything else.
+try:
+    import brotlicffi as brotli
+except ImportError:  # pragma: no cover
+    try:
+        import brotli
+    except ImportError:
+        brotli = None
 
 
 class DecodingError(httpx.RequestError):

@@ -21,6 +21,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["black==24.10.0", "pylint==3.3.1", "pytest==8.3.3"]
+brotli = [
+    "brotli; platform_python_implementation == 'CPython'",
+    "brotlicffi; platform_python_implementation != 'CPython'",
+]
+zstd = [
+  "zstandard>=0.18.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/vtuber-plan/olah"
