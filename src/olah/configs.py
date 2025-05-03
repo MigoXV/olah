@@ -24,6 +24,7 @@ DEFAULT_CACHE_RULES = [
 
 
 class OlahRule(object):
+    """A rule for controlling access to repositories."""
     def __init__(self, repo: str = "", type: str = "*", allow: bool = False, use_re: bool = False) -> None:
         self.repo = repo
         self.type = type
@@ -32,6 +33,13 @@ class OlahRule(object):
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "OlahRule":
+        """Creates an OlahRule object from a dictionary.
+
+        :param data: A dictionary containing the rule data.
+        :type data: Dict[str, Any]
+        :return: An OlahRule object.
+        :rtype: OlahRule
+        """
         out = OlahRule()
         if "repo" in data:
             out.repo = data["repo"]
@@ -42,24 +50,52 @@ class OlahRule(object):
         return out
 
     def match(self, repo_name: str) -> bool:
+        """Matches the given repository name against the rule.
+
+        :param repo_name: The repository name to match.
+        :type repo_name: str
+        :return True if the repository name matches the rule, False otherwise.
+        :rtype: bool
+        """
         if self.use_re:
             return self.match_re(repo_name)
         else:
             return self.match_fn(repo_name)
 
     def match_fn(self, repo_name: str) -> bool:
+        """Matches the repository name using a Unix shell style pattern.
+        
+        :param repo_name: The repository name to match.
+        :type repo_name: str
+        :return True if the repository name matches the pattern, False otherwise.
+        :rtype: bool
+        """
         return fnmatch.fnmatch(repo_name, self.repo)
 
     def match_re(self, repo_name: str) -> bool:
+        """Matches the repository name using a regular expression.
+        
+        :param repo_name: The repository name to match.
+        :type repo_name: str
+        :return True if the repository name matches the pattern, False otherwise.
+        :rtype: bool
+        """
         return re.match(self.repo, repo_name) is not None
 
 
 class OlahRuleList(object):
+    """A list of OlahRule objects."""
     def __init__(self) -> None:
         self.rules: List[OlahRule] = []
 
     @staticmethod
     def from_list(data: List[Dict[str, Any]]) -> "OlahRuleList":
+        """Creates an OlahRuleList object from a list of dictionaries.
+        :param data: A list of dictionaries containing the rule data.
+        :type data: List[Dict[str, Any]]
+        :return: An OlahRuleList object.
+        :rtype: OlahRuleList
+        """
         out = OlahRuleList()
         for item in data:
             out.rules.append(OlahRule.from_dict(item))
@@ -77,6 +113,7 @@ class OlahRuleList(object):
 
 
 class OlahConfig(object):
+    """Olah configuration manager."""
     def __init__(self, path: Optional[str] = None) -> None:
 
         # basic
