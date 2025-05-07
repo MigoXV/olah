@@ -552,6 +552,10 @@ async def cdn_file_get_generator(
 
     return _file_realtime_stream(
         app=app,
+        repo_type=repo_type,
+        org=org,
+        repo=repo,
+        file_path=f"cdn/{file_hash}",
         save_path=save_path,
         head_path=head_path,
         url=str(request.url),

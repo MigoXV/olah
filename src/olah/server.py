@@ -786,7 +786,6 @@ async def whoami_v2(request: Request):
         headers=response_headers,
     )
 
-
 # ======================
 # File Head Hooks
 # ======================
@@ -1118,6 +1117,52 @@ async def repos(request: Request):
         },
     )
 
+
+"""
+Repo listing API
+The following endpoints help get information about models, datasets, and Spaces stored on the Hub.
+
+When making API calls to retrieve information about repositories, the createdAt attribute indicates the time when the respective repository was created. It's important to note that there is a unique value, 2022-03-02T23:29:04.000Z assigned to all repositories that were created before we began storing creation dates.
+GET /api/models
+Get information from all models in the Hub. The response is paginated, use the Link header to get the next pages. You can specify additional parameters to have more specific results.
+
+search: Filter based on substrings for repos and their usernames, such as resnet or microsoft
+author: Filter models by an author or organization, such as huggingface or microsoft
+filter: Filter based on tags, such as text-classification or spacy.
+sort: Property to use when sorting, such as downloads or author.
+direction: Direction in which to sort, such as -1 for descending, and anything else for ascending.
+limit: Limit the number of models fetched.
+full: Whether to fetch most model data, such as all tags, the files, etc.
+config: Whether to also fetch the repo config.
+Payload:
+
+Copied
+params = {
+    "search":"search",
+    "author":"author",
+    "filter":"filter",
+    "sort":"sort",
+    "direction":"direction",
+    "limit":"limit",
+    "full":"full",
+    "config":"config"
+}
+This is equivalent to huggingface_hub.list_models().
+"""
+# ======================
+# Repository API Hooks
+# ======================
+@app.route("/api/models", methods=["GET"])
+async def list_models(
+    search: Optional[str]=None,
+    author: Optional[str]=None,
+    filter: Optional[str]=None,
+    sort: Optional[str]=None,
+    direction: Optional[int]=None,
+    limit: Optional[int]=None,
+    full: Optional[bool]=None,
+    config: Optional[bool]=None):
+    pass
 
 def init():
     parser = argparse.ArgumentParser(

@@ -171,3 +171,8 @@ cython_debug/
 *.pem
 *.crt
 
+
+
+.vscode/
+.continue/
+node_modules
