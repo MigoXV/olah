@@ -96,11 +96,11 @@ const HomePage = () => {
 
   return (
     <div>
-      <div className="bg-gradient-to-r from-blue-700 to-blue-900 text-white p-8 rounded-lg mb-8">
-        <Title level={1} className="text-white mb-4">
+      <div className="bg-gradient-to-r from-[oklch(0.43_0.05_272.14)] to-[oklch(0.42_0.17_265.13)] text-white p-8 rounded-lg mb-8">
+        <Title level={1} className="text-white mb-4" style={{ color: 'white' }}>
           {t("home.welcome")}
         </Title>
-        <Paragraph className="text-white text-lg mb-6">{t("home.welcomeDesc")}</Paragraph>
+        <Paragraph className="text-white text-lg mb-6" style={{ color: 'white' }}>{t("home.welcomeDesc")}</Paragraph>
         <div className="flex space-x-4">
           <Button type="primary" size="large" className="bg-white text-blue-700 hover:bg-gray-100">
             <Link to="/models">{t("home.browseModels")}</Link>

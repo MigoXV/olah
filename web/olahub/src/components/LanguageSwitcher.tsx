@@ -36,8 +36,8 @@ const LanguageSwitcher = () => {
       onOpenChange={(flag) => setVisible(flag)}
       trigger={["click"]}
     >
-      <Button type="text" icon={<GlobalOutlined />} className="flex items-center text-white">
-        {i18n.language === "zh" ? "中文" : "English"}
+      <Button type="text" icon={<GlobalOutlined />} className="flex items-center text-white" style={{ color: 'white' }}>
+        <span>{i18n.language === "zh" ? "中文" : "English"}</span>
       </Button>
     </Dropdown>
   )

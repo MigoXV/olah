@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Outlet, Link, useNavigate } from "react-router-dom"
-import { Layout as AntLayout, Menu, Button, Avatar, Dropdown, Input, Badge, theme } from "antd"
+import { Layout as AntLayout, Menu, Button, Avatar, Dropdown, Badge, theme } from "antd"
 import {
   HomeOutlined,
   DatabaseOutlined,
@@ -16,20 +16,15 @@ import { useAuth } from "../contexts/AuthContext"
 import LanguageSwitcher from "./LanguageSwitcher"
 
 const { Header, Content, Footer } = AntLayout
-const { Search } = Input
 
 const Layout = () => {
   const { t } = useTranslation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [searchValue, setSearchValue] = useState("")
+
   const { token } = theme.useToken()
 
-  const handleSearch = (value: string) => {
-    if (value) {
-      navigate(`/search?q=${encodeURIComponent(value)}`)
-    }
-  }
+
 
   const userMenu = (
     <Menu>
@@ -47,18 +42,19 @@ const Layout = () => {
     <AntLayout className="min-h-screen">
       <Header
         className="px-6 md:px-12 lg:px-16 flex items-center justify-between"
-        style={{ background: "#001529", padding: "0 24px" }}
+        style={{ background: "#3c4a5a", padding: "0 24px" }}
       >
         <div className="flex items-center">
           <Link to="/" className="flex items-center mr-8">
-            <span className="text-xl font-bold text-white">Olah</span>
+            <span className="text-xl font-bold text-white" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>Olah</span>
           </Link>
           <Menu
             mode="horizontal"
             className="border-0 bg-transparent"
             defaultSelectedKeys={["home"]}
-            style={{ background: "transparent", color: "white" }}
+            style={{ background: "transparent", color: "white", fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}
             theme="dark"
+            selectedStyle={{ color: "#a0d8f7" }}
           >
             <Menu.Item key="home" icon={<HomeOutlined />}>
               <Link to="/">{t("common.home")}</Link>
@@ -73,13 +69,7 @@ const Layout = () => {
         </div>
 
         <div className="flex items-center">
-          <Search
-            placeholder={t("common.search")}
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            onSearch={handleSearch}
-            className="w-48 md:w-64 mr-4"
-          />
+
 
           <LanguageSwitcher />
 
