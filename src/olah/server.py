@@ -15,6 +15,7 @@ import time
 import traceback
 from typing import Annotated, List, Literal, Optional, Sequence, Tuple, Union
 from urllib.parse import urljoin
+import aiofiles
 from fastapi import FastAPI, Header, Request, Form
 from fastapi.responses import (
     FileResponse,
@@ -33,7 +34,7 @@ from olah.proxy.commits import commits_generator
 from olah.proxy.pathsinfo import pathsinfo_generator
 from olah.proxy.tree import tree_generator
 from olah.utils.disk_utils import convert_bytes_to_human_readable, convert_to_bytes, get_folder_size, sort_files_by_access_time, sort_files_by_modify_time, sort_files_by_size
-from olah.utils.url_utils import clean_path
+from olah.utils.url_utils import clean_path, get_all_ranges, parse_range_params
 from olah.utils.s3_client import S3Client
 
 BASE_SETTINGS = False
@@ -67,7 +68,7 @@ from olah.utils.repo_utils import (
     get_newest_commit_hf,
     parse_org_repo,
 )
-from olah.constants import OLAH_CODE_DIR, REPO_TYPES_MAPPING
+from olah.constants import CHUNK_SIZE, HUGGINGFACE_HEADER_X_REPO_COMMIT, OLAH_CODE_DIR, REPO_TYPES_MAPPING
 from olah.utils.logging import build_logger
 
 logger = None
@@ -159,6 +160,52 @@ async def check_disk_usage() -> None:
     current_size = get_folder_size(app.state.app_settings.config.repos_path)
     current_size_h = convert_bytes_to_human_readable(current_size)
     print(f"Cleaning finished. Limit: {limit_size_h}, Current: {current_size_h}.")
+
+
+def _get_model_bin_file_path(root_path: str, org: str, repo: str, file_path: str) -> Optional[str]:
+    normalized_root = os.path.abspath(root_path)
+    normalized_file = os.path.normpath(file_path).lstrip(os.sep)
+    candidate = os.path.abspath(os.path.join(normalized_root, org, repo, normalized_file))
+
+    if os.path.commonpath([normalized_root, candidate]) != normalized_root:
+        return None
+
+    if os.path.isfile(candidate):
+        return candidate
+
+    return None
+
+
+def _model_bin_headers(path: str, request_range: Optional[str], commit: Optional[str]) -> Tuple[dict, List[Tuple[int, int]]]:
+    file_size = os.path.getsize(path)
+    unit, ranges, suffix = parse_range_params(request_range or f"bytes=0-{file_size-1}")
+    all_ranges = get_all_ranges(file_size, unit, ranges, suffix)
+
+    headers = {
+        "content-length": str(sum(r[1] - r[0] for r in all_ranges)),
+        "content-range": f"bytes {','.join(f'{r[0]}-{r[1]-1}' for r in all_ranges)}/{file_size}"
+        if suffix is None
+        else f"bytes -{suffix}/{file_size}",
+        "etag": f'"{os.path.getmtime(path)}-{file_size}"',
+    }
+
+    if commit is not None:
+        headers[HUGGINGFACE_HEADER_X_REPO_COMMIT.lower()] = commit
+
+    return headers, all_ranges
+
+
+async def _model_bin_stream_response(path: str, ranges: List[Tuple[int, int]]):
+    async with aiofiles.open(path, "rb") as fp:
+        for start, end in ranges:
+            await fp.seek(start)
+            remaining = end - start
+            while remaining > 0:
+                chunk = await fp.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
 
 
 @asynccontextmanager
@@ -814,6 +861,20 @@ async def file_head_common(
             logger.warning(f"Local repository {git_path} is not a valid git reposity.")
             continue
 
+    if (
+        repo_type == "models"
+        and app.state.app_settings.config.model_bin_enable
+        and app.state.app_settings.config.model_bin_path is not None
+    ):
+        local_path = _get_model_bin_file_path(
+            app.state.app_settings.config.model_bin_path, org, repo, file_path
+        )
+        if local_path:
+            headers, _ = _model_bin_headers(
+                local_path, request.headers.get("range"), commit
+            )
+            return Response(headers=headers)
+
     # Proxy the HF File Head
     try:
         if not app.state.app_settings.config.offline and not await check_commit_hf(
@@ -948,6 +1009,24 @@ async def file_get_common(
         except git.exc.InvalidGitRepositoryError:
             logger.warning(f"Local repository {git_path} is not a valid git reposity.")
             continue
+
+    if (
+        repo_type == "models"
+        and app.state.app_settings.config.model_bin_enable
+        and app.state.app_settings.config.model_bin_path is not None
+    ):
+        local_path = _get_model_bin_file_path(
+            app.state.app_settings.config.model_bin_path, org, repo, file_path
+        )
+        if local_path:
+            headers, ranges = _model_bin_headers(
+                local_path, request.headers.get("range"), commit
+            )
+            return StreamingResponse(
+                _model_bin_stream_response(local_path, ranges),
+                headers=headers,
+                status_code=200,
+            )
     try:
         if not app.state.app_settings.config.offline and not await check_commit_hf(
             app,
@@ -1140,6 +1219,8 @@ def init():
     parser.add_argument("--cache-size-limit", type=str, default="", help="The limit size of cache. (Example values: '100MB', '2GB', '500KB')")
     parser.add_argument("--cache-clean-strategy", type=str, default="LRU", help="The clean strategy of cache. ('LRU', 'FIFO', 'LARGE_FIRST')")
     parser.add_argument("--log-path", type=str, default="./logs", help="The folder to save logs")
+    parser.add_argument("--enable-model-bin", action="store_true", help="Serve models from a local model bin directory")
+    parser.add_argument("--model-bin-path", type=str, default=None, help="Root directory for local model binaries")
     parser.add_argument("--enable-s3", action="store_true", help="Enable uploading model caches to an S3 compatible endpoint")
     parser.add_argument("--s3-endpoint", type=str, default=None, help="S3 endpoint, for example https://s3.example.com")
     parser.add_argument("--s3-region", type=str, default="us-east-1", help="Region used for signing S3 requests")
@@ -1190,6 +1271,10 @@ def init():
             config.cache_size_limit = convert_to_bytes(args.cache_size_limit)
         if not is_default_value(args, "cache_clean_strategy"):
             config.cache_clean_strategy = args.cache_clean_strategy
+        if args.enable_model_bin:
+            config.model_bin.enable = True
+        if not is_default_value(args, "model_bin_path"):
+            config.model_bin.path = args.model_bin_path
         if args.enable_s3:
             config.s3_enable = True
         if not is_default_value(args, "s3_endpoint"):
@@ -1234,6 +1319,10 @@ def init():
         args.cache_size_limit = config.cache_size_limit
     if is_default_value(args, "cache_clean_strategy"):
         args.cache_clean_strategy = config.cache_clean_strategy
+    if is_default_value(args, "enable_model_bin"):
+        args.enable_model_bin = config.model_bin_enable
+    if is_default_value(args, "model_bin_path"):
+        args.model_bin_path = config.model_bin_path
     if is_default_value(args, "enable_s3"):
         args.enable_s3 = config.s3_enable
     if is_default_value(args, "s3_endpoint"):

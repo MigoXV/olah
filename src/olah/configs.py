@@ -127,6 +127,12 @@ class S3Config:
 
 
 @dataclass
+class ModelBinConfig:
+    enable: bool = False
+    path: Optional[str] = None
+
+
+@dataclass
 class AccessibilityConfig:
     offline: bool = False
     proxy: OlahRuleList = field(default_factory=lambda: OlahRuleList.from_list(DEFAULT_PROXY_RULES))
@@ -138,6 +144,7 @@ class OlahConfig:
     basic: BasicConfig = field(default_factory=BasicConfig)
     accessibility: AccessibilityConfig = field(default_factory=AccessibilityConfig)
     s3: S3Config = field(default_factory=S3Config)
+    model_bin: ModelBinConfig = field(default_factory=ModelBinConfig)
 
     @classmethod
     def from_toml(cls, path: Optional[str]) -> "OlahConfig":
@@ -192,6 +199,11 @@ class OlahConfig:
             self.s3.access_key = self._empty_str(s3.get("access-key", self.s3.access_key))
             self.s3.secret_key = self._empty_str(s3.get("secret-key", self.s3.secret_key))
             self.s3.bucket = self._empty_str(s3.get("bucket", self.s3.bucket))
+
+        if "model-bin" in config:
+            model_bin = config["model-bin"]
+            self.model_bin.enable = model_bin.get("enable", self.model_bin.enable)
+            self.model_bin.path = self._empty_str(model_bin.get("path", self.model_bin.path))
 
     @property
     def host(self) -> Union[List[str], str]:
@@ -284,6 +296,14 @@ class OlahConfig:
     @property
     def s3_bucket(self) -> Optional[str]:
         return self.s3.bucket
+
+    @property
+    def model_bin_enable(self) -> bool:
+        return self.model_bin.enable
+
+    @property
+    def model_bin_path(self) -> Optional[str]:
+        return self.model_bin.path
 
     def hf_url_base(self) -> str:
         return self.basic.hf_url_base()
