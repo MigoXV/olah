@@ -92,6 +92,14 @@ class OlahConfig(object):
         self.hf_netloc: str = "huggingface.co"
         self.hf_lfs_netloc: str = "cdn-lfs.huggingface.co"
 
+        # s3 settings
+        self.s3_enable: bool = False
+        self.s3_endpoint: Optional[str] = None
+        self.s3_region: str = "us-east-1"
+        self.s3_access_key: Optional[str] = None
+        self.s3_secret_key: Optional[str] = None
+        self.s3_bucket: Optional[str] = None
+
         self.mirror_scheme: str = "http" if self.ssl_key is None else "https"
         self.mirror_netloc: str = (
             f"{self.host if self._is_specific_addr(self.host) else 'localhost'}:{self.port}"
@@ -164,3 +172,12 @@ class OlahConfig(object):
             self.offline = accessibility.get("offline", self.offline)
             self.proxy = OlahRuleList.from_list(accessibility.get("proxy", DEFAULT_PROXY_RULES))
             self.cache = OlahRuleList.from_list(accessibility.get("cache", DEFAULT_CACHE_RULES))
+
+        if "s3" in config:
+            s3 = config["s3"]
+            self.s3_enable = s3.get("enable", self.s3_enable)
+            self.s3_endpoint = self.empty_str(s3.get("endpoint", self.s3_endpoint))
+            self.s3_region = s3.get("region", self.s3_region)
+            self.s3_access_key = self.empty_str(s3.get("access-key", self.s3_access_key))
+            self.s3_secret_key = self.empty_str(s3.get("secret-key", self.s3_secret_key))
+            self.s3_bucket = self.empty_str(s3.get("bucket", self.s3_bucket))
