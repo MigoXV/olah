@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 import datetime
 import os
 import glob
-import argparse
 import sys
 import time
 import traceback
@@ -29,6 +28,7 @@ from fastapi_utils.tasks import repeat_every
 
 import git
 import httpx
+import typer
 
 from olah.proxy.commits import commits_generator
 from olah.proxy.pathsinfo import pathsinfo_generator
@@ -1199,202 +1199,152 @@ async def repos(request: Request):
     )
 
 
-def init():
-    parser = argparse.ArgumentParser(
-        description="Olah Huggingface Mirror Server."
-    )
-    parser.add_argument("--config", "-c", type=str, default="")
-    parser.add_argument("--host", type=str, default="localhost")
-    parser.add_argument("--port", type=int, default=8090)
-    parser.add_argument("--hf-scheme", type=str, default="https", help="The scheme of huggingface site (http or https)")
-    parser.add_argument("--hf-netloc", type=str, default="huggingface.co")
-    parser.add_argument("--hf-lfs-netloc", type=str, default="cdn-lfs.huggingface.co")
-    parser.add_argument("--mirror-scheme", type=str, default="http", help="The scheme of mirror site (http or https)")
-    parser.add_argument("--mirror-netloc", type=str, default="localhost:8090")
-    parser.add_argument("--mirror-lfs-netloc", type=str, default="localhost:8090")
-    parser.add_argument("--has-lfs-site", action="store_true")
-    parser.add_argument("--ssl-key", type=str, default=None, help="The SSL key file path, if HTTPS is used")
-    parser.add_argument("--ssl-cert", type=str, default=None, help="The SSL cert file path, if HTTPS is used")
-    parser.add_argument("--repos-path", type=str, default="./repos", help="The folder to save cached repositories")
-    parser.add_argument("--cache-size-limit", type=str, default="", help="The limit size of cache. (Example values: '100MB', '2GB', '500KB')")
-    parser.add_argument("--cache-clean-strategy", type=str, default="LRU", help="The clean strategy of cache. ('LRU', 'FIFO', 'LARGE_FIRST')")
-    parser.add_argument("--log-path", type=str, default="./logs", help="The folder to save logs")
-    parser.add_argument("--enable-model-bin", action="store_true", help="Serve models from a local model bin directory")
-    parser.add_argument("--model-bin-path", type=str, default=None, help="Root directory for local model binaries")
-    parser.add_argument("--enable-s3", action="store_true", help="Enable uploading model caches to an S3 compatible endpoint")
-    parser.add_argument("--s3-endpoint", type=str, default=None, help="S3 endpoint, for example https://s3.example.com")
-    parser.add_argument("--s3-region", type=str, default="us-east-1", help="Region used for signing S3 requests")
-    parser.add_argument("--s3-access-key", type=str, default=None, help="S3 access key id")
-    parser.add_argument("--s3-secret-key", type=str, default=None, help="S3 secret access key")
-    parser.add_argument("--s3-bucket", type=str, default=None, help="Bucket used to store mirrored models")
-    args = parser.parse_args()
-    
-    logger = build_logger("olah", "olah.log", logger_dir=args.log_path)
-    
-    def is_default_value(args, arg_name):
-        if hasattr(args, arg_name):
-            arg_value = getattr(args, arg_name)
-            arg_default = parser.get_default(arg_name)
-            return arg_value == arg_default
-        return False
+def run(
+    config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to a config TOML file"),
+    host: Optional[str] = typer.Option(None, help="Host to bind the server"),
+    port: Optional[int] = typer.Option(None, help="Port to bind the server"),
+    hf_scheme: Optional[str] = typer.Option(None, help="The scheme of huggingface site (http or https)"),
+    hf_netloc: Optional[str] = typer.Option(None, help="HuggingFace site netloc"),
+    hf_lfs_netloc: Optional[str] = typer.Option(None, help="HuggingFace LFS netloc"),
+    mirror_scheme: Optional[str] = typer.Option(None, help="The scheme of mirror site (http or https)"),
+    mirror_netloc: Optional[str] = typer.Option(None, help="Mirror site netloc"),
+    mirror_lfs_netloc: Optional[str] = typer.Option(None, help="Mirror LFS site netloc"),
+    has_lfs_site: bool = typer.Option(False, "--has-lfs-site", help="Mirror has dedicated LFS site"),
+    ssl_key: Optional[str] = typer.Option(None, help="The SSL key file path, if HTTPS is used"),
+    ssl_cert: Optional[str] = typer.Option(None, help="The SSL cert file path, if HTTPS is used"),
+    repos_path: Optional[str] = typer.Option(None, help="The folder to save cached repositories"),
+    cache_size_limit: Optional[str] = typer.Option(None, help="The limit size of cache. (Example values: '100MB', '2GB', '500KB')"),
+    cache_clean_strategy: Optional[str] = typer.Option(None, help="The clean strategy of cache. ('LRU', 'FIFO', 'LARGE_FIRST')"),
+    log_path: str = typer.Option("./logs", help="The folder to save logs"),
+    enable_model_bin: Optional[bool] = typer.Option(
+        None,
+        "--enable-model-bin/--disable-model-bin",
+        help="Serve models from a local model bin directory",
+        show_default=False,
+    ),
+    model_bin_path: Optional[str] = typer.Option(None, help="Root directory for local model binaries"),
+    enable_s3: Optional[bool] = typer.Option(
+        None,
+        "--enable-s3/--disable-s3",
+        help="Enable uploading model caches to an S3 compatible endpoint",
+        show_default=False,
+    ),
+    s3_endpoint: Optional[str] = typer.Option(None, help="S3 endpoint, for example https://s3.example.com"),
+    s3_region: Optional[str] = typer.Option("us-east-1", help="Region used for signing S3 requests"),
+    s3_access_key: Optional[str] = typer.Option(None, help="S3 access key id"),
+    s3_secret_key: Optional[str] = typer.Option(None, help="S3 secret access key"),
+    s3_bucket: Optional[str] = typer.Option(None, help="Bucket used to store mirrored models"),
+):
+    """Start the Olah Huggingface Mirror Server."""
 
-    if args.config != "":
-        config = OlahConfig(args.config)
-    else:
-        config = OlahConfig()
-        
-        if not is_default_value(args, "host"):
-            config.host = args.host
-        if not is_default_value(args, "port"):
-            config.port = args.port
-        
-        if not is_default_value(args, "ssl_key"):
-            config.ssl_key = args.ssl_key
-        if not is_default_value(args, "ssl_cert"):
-            config.ssl_cert = args.ssl_cert
-        
-        if not is_default_value(args, "repos_path"):
-            config.repos_path = args.repos_path
-        if not is_default_value(args, "hf_scheme"):
-            config.hf_scheme = args.hf_scheme
-        if not is_default_value(args, "hf_netloc"):
-            config.hf_netloc = args.hf_netloc
-        if not is_default_value(args, "hf_lfs_netloc"):
-            config.hf_lfs_netloc = args.hf_lfs_netloc
-        if not is_default_value(args, "mirror_scheme"):
-            config.mirror_scheme = args.mirror_scheme
-        if not is_default_value(args, "mirror_netloc"):
-            config.mirror_netloc = args.mirror_netloc
-        if not is_default_value(args, "mirror_lfs_netloc"):
-            config.mirror_lfs_netloc = args.mirror_lfs_netloc
-        if not is_default_value(args, "cache_size_limit"):
-            config.cache_size_limit = convert_to_bytes(args.cache_size_limit)
-        if not is_default_value(args, "cache_clean_strategy"):
-            config.cache_clean_strategy = args.cache_clean_strategy
-        if args.enable_model_bin:
-            config.model_bin.enable = True
-        if not is_default_value(args, "model_bin_path"):
-            config.model_bin.path = args.model_bin_path
-        if args.enable_s3:
-            config.s3_enable = True
-        if not is_default_value(args, "s3_endpoint"):
-            config.s3_endpoint = args.s3_endpoint
-        if not is_default_value(args, "s3_region"):
-            config.s3_region = args.s3_region
-        if not is_default_value(args, "s3_access_key"):
-            config.s3_access_key = args.s3_access_key
-        if not is_default_value(args, "s3_secret_key"):
-            config.s3_secret_key = args.s3_secret_key
-        if not is_default_value(args, "s3_bucket"):
-            config.s3_bucket = args.s3_bucket
-        else:
-            if not args.has_lfs_site and not is_default_value(args, "mirror_netloc"):
-                config.mirror_lfs_netloc = args.mirror_netloc
+    global logger
+    logger = build_logger("olah", "olah.log", logger_dir=log_path)
 
-    if is_default_value(args, "host"):
-        args.host = config.host
-    if is_default_value(args, "port"):
-        args.port = config.port
-    if is_default_value(args, "ssl_key"):
-        args.ssl_key = config.ssl_key
-    if is_default_value(args, "ssl_cert"):
-        args.ssl_cert = config.ssl_cert
-    if is_default_value(args, "repos_path"):
-        args.repos_path = config.repos_path
-    
-    if is_default_value(args, "hf_scheme"):
-        args.hf_scheme = config.hf_scheme
-    if is_default_value(args, "hf_netloc"):
-        args.hf_netloc = config.hf_netloc
-    if is_default_value(args, "hf_lfs_netloc"):
-        args.hf_lfs_netloc = config.hf_lfs_netloc
-    if is_default_value(args, "mirror_scheme"):
-        args.mirror_scheme = config.mirror_scheme
-    if is_default_value(args, "mirror_netloc"):
-        args.mirror_netloc = config.mirror_netloc
-    if is_default_value(args, "mirror_lfs_netloc"):
-        args.mirror_lfs_netloc = config.mirror_lfs_netloc
-    
-    if is_default_value(args, "cache_size_limit"):
-        args.cache_size_limit = config.cache_size_limit
-    if is_default_value(args, "cache_clean_strategy"):
-        args.cache_clean_strategy = config.cache_clean_strategy
-    if is_default_value(args, "enable_model_bin"):
-        args.enable_model_bin = config.model_bin_enable
-    if is_default_value(args, "model_bin_path"):
-        args.model_bin_path = config.model_bin_path
-    if is_default_value(args, "enable_s3"):
-        args.enable_s3 = config.s3_enable
-    if is_default_value(args, "s3_endpoint"):
-        args.s3_endpoint = config.s3_endpoint
-    if is_default_value(args, "s3_region"):
-        args.s3_region = config.s3_region
-    if is_default_value(args, "s3_access_key"):
-        args.s3_access_key = config.s3_access_key
-    if is_default_value(args, "s3_secret_key"):
-        args.s3_secret_key = config.s3_secret_key
-    if is_default_value(args, "s3_bucket"):
-        args.s3_bucket = config.s3_bucket
+    config_obj = OlahConfig.from_toml(config)
 
-    # Post processing
-    if "," in args.host:
-        args.host = args.host.split(",")
-    
-    args.mirror_scheme = config.mirror_scheme = "http" if args.ssl_key is None else "https"
+    if host is not None:
+        config_obj.basic.host = host
+    if port is not None:
+        config_obj.basic.port = port
 
-    print(args)
-    # Warnings
-    if config.cache_size_limit is not None:
-        logger.info(f"""
+    if ssl_key is not None:
+        config_obj.basic.ssl_key = ssl_key
+    if ssl_cert is not None:
+        config_obj.basic.ssl_cert = ssl_cert
+
+    if repos_path is not None:
+        config_obj.basic.repos_path = repos_path
+    if hf_scheme is not None:
+        config_obj.basic.hf_scheme = hf_scheme
+    if hf_netloc is not None:
+        config_obj.basic.hf_netloc = hf_netloc
+    if hf_lfs_netloc is not None:
+        config_obj.basic.hf_lfs_netloc = hf_lfs_netloc
+    if mirror_scheme is not None:
+        config_obj.basic.mirror_scheme = mirror_scheme
+    if mirror_netloc is not None:
+        config_obj.basic.mirror_netloc = mirror_netloc
+    if mirror_lfs_netloc is not None:
+        config_obj.basic.mirror_lfs_netloc = mirror_lfs_netloc
+    if cache_size_limit is not None:
+        config_obj.basic.cache_size_limit = convert_to_bytes(cache_size_limit)
+    if cache_clean_strategy is not None:
+        config_obj.basic.cache_clean_strategy = cache_clean_strategy
+    if enable_model_bin is not None:
+        config_obj.model_bin.enable = enable_model_bin
+    if model_bin_path is not None:
+        config_obj.model_bin.path = model_bin_path
+    if enable_s3 is not None:
+        config_obj.s3.enable = enable_s3
+    if s3_endpoint is not None:
+        config_obj.s3.endpoint = s3_endpoint
+    if s3_region is not None:
+        config_obj.s3.region = s3_region
+    if s3_access_key is not None:
+        config_obj.s3.access_key = s3_access_key
+    if s3_secret_key is not None:
+        config_obj.s3.secret_key = s3_secret_key
+    if s3_bucket is not None:
+        config_obj.s3.bucket = s3_bucket
+    elif not has_lfs_site and mirror_netloc is not None:
+        config_obj.basic.mirror_lfs_netloc = mirror_netloc
+
+    if isinstance(config_obj.basic.host, str) and "," in config_obj.basic.host:
+        config_obj.basic.host = config_obj.basic.host.split(",")
+
+    config_obj.basic.mirror_scheme = "http" if config_obj.basic.ssl_key is None else "https"
+
+    if config_obj.basic.cache_size_limit is not None:
+        logger.info(
+            f"""
 ======== WARNING ========
 Due to the cache_size_limit parameter being set, Olah will periodically delete cache files.
-Please ensure that the cache directory specified in repos_path '{config.repos_path}' is correct.
+Please ensure that the cache directory specified in repos_path '{config_obj.basic.repos_path}' is correct.
 Incorrect settings may result in unintended file deletion and loss!!! !!!
-=========================""")
-        for i in range(10):
+========================="""
+        )
+        for _ in range(10):
             time.sleep(0.2)
 
-    # Init app settings
-    app.state.app_settings = AppSettings(config=config)
+    app.state.app_settings = AppSettings(config=config_obj)
 
-    if config.s3_enable and config.s3_endpoint and config.s3_access_key and config.s3_secret_key and config.s3_bucket:
+    if (
+        config_obj.s3.enable
+        and config_obj.s3.endpoint
+        and config_obj.s3.access_key
+        and config_obj.s3.secret_key
+        and config_obj.s3.bucket
+    ):
         app.state.s3_client = S3Client(
-            endpoint=config.s3_endpoint,
-            region=config.s3_region,
-            access_key=config.s3_access_key,
-            secret_key=config.s3_secret_key,
-            bucket=config.s3_bucket,
+            endpoint=config_obj.s3.endpoint,
+            region=config_obj.s3.region,
+            access_key=config_obj.s3.access_key,
+            secret_key=config_obj.s3.secret_key,
+            bucket=config_obj.s3.bucket,
         )
     else:
         app.state.s3_client = None
-    return args
 
-def main():
-    args = init()
-    if __name__ == "__main__":
-        import uvicorn
-        uvicorn.run(
-            "olah.server:app",
-            host=args.host,
-            port=args.port,
-            log_level="info",
-            reload=False,
-            ssl_keyfile=args.ssl_key,
-            ssl_certfile=args.ssl_cert
-        )
-
-def cli():
-    args = init()
     import uvicorn
+
     uvicorn.run(
         "olah.server:app",
-        host=args.host,
-        port=args.port,
+        host=config_obj.basic.host,
+        port=config_obj.basic.port,
         log_level="info",
         reload=False,
-        ssl_keyfile=args.ssl_key,
-        ssl_certfile=args.ssl_cert,
+        ssl_keyfile=config_obj.basic.ssl_key,
+        ssl_certfile=config_obj.basic.ssl_cert,
     )
+
+
+def main():
+    typer.run(run)
+
+
+def cli():
+    typer.run(run)
+
 
 if __name__ in ["olah.server", "__main__"]:
     main()
