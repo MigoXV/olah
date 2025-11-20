@@ -34,6 +34,7 @@ from olah.proxy.pathsinfo import pathsinfo_generator
 from olah.proxy.tree import tree_generator
 from olah.utils.disk_utils import convert_bytes_to_human_readable, convert_to_bytes, get_folder_size, sort_files_by_access_time, sort_files_by_modify_time, sort_files_by_size
 from olah.utils.url_utils import clean_path
+from olah.utils.s3_client import S3Client
 
 BASE_SETTINGS = False
 if not BASE_SETTINGS:
@@ -1139,6 +1140,12 @@ def init():
     parser.add_argument("--cache-size-limit", type=str, default="", help="The limit size of cache. (Example values: '100MB', '2GB', '500KB')")
     parser.add_argument("--cache-clean-strategy", type=str, default="LRU", help="The clean strategy of cache. ('LRU', 'FIFO', 'LARGE_FIRST')")
     parser.add_argument("--log-path", type=str, default="./logs", help="The folder to save logs")
+    parser.add_argument("--enable-s3", action="store_true", help="Enable uploading model caches to an S3 compatible endpoint")
+    parser.add_argument("--s3-endpoint", type=str, default=None, help="S3 endpoint, for example https://s3.example.com")
+    parser.add_argument("--s3-region", type=str, default="us-east-1", help="Region used for signing S3 requests")
+    parser.add_argument("--s3-access-key", type=str, default=None, help="S3 access key id")
+    parser.add_argument("--s3-secret-key", type=str, default=None, help="S3 secret access key")
+    parser.add_argument("--s3-bucket", type=str, default=None, help="Bucket used to store mirrored models")
     args = parser.parse_args()
     
     logger = build_logger("olah", "olah.log", logger_dir=args.log_path)
@@ -1183,6 +1190,18 @@ def init():
             config.cache_size_limit = convert_to_bytes(args.cache_size_limit)
         if not is_default_value(args, "cache_clean_strategy"):
             config.cache_clean_strategy = args.cache_clean_strategy
+        if args.enable_s3:
+            config.s3_enable = True
+        if not is_default_value(args, "s3_endpoint"):
+            config.s3_endpoint = args.s3_endpoint
+        if not is_default_value(args, "s3_region"):
+            config.s3_region = args.s3_region
+        if not is_default_value(args, "s3_access_key"):
+            config.s3_access_key = args.s3_access_key
+        if not is_default_value(args, "s3_secret_key"):
+            config.s3_secret_key = args.s3_secret_key
+        if not is_default_value(args, "s3_bucket"):
+            config.s3_bucket = args.s3_bucket
         else:
             if not args.has_lfs_site and not is_default_value(args, "mirror_netloc"):
                 config.mirror_lfs_netloc = args.mirror_netloc
@@ -1215,6 +1234,18 @@ def init():
         args.cache_size_limit = config.cache_size_limit
     if is_default_value(args, "cache_clean_strategy"):
         args.cache_clean_strategy = config.cache_clean_strategy
+    if is_default_value(args, "enable_s3"):
+        args.enable_s3 = config.s3_enable
+    if is_default_value(args, "s3_endpoint"):
+        args.s3_endpoint = config.s3_endpoint
+    if is_default_value(args, "s3_region"):
+        args.s3_region = config.s3_region
+    if is_default_value(args, "s3_access_key"):
+        args.s3_access_key = config.s3_access_key
+    if is_default_value(args, "s3_secret_key"):
+        args.s3_secret_key = config.s3_secret_key
+    if is_default_value(args, "s3_bucket"):
+        args.s3_bucket = config.s3_bucket
 
     # Post processing
     if "," in args.host:
@@ -1233,9 +1264,20 @@ Incorrect settings may result in unintended file deletion and loss!!! !!!
 =========================""")
         for i in range(10):
             time.sleep(0.2)
-    
+
     # Init app settings
     app.state.app_settings = AppSettings(config=config)
+
+    if config.s3_enable and config.s3_endpoint and config.s3_access_key and config.s3_secret_key and config.s3_bucket:
+        app.state.s3_client = S3Client(
+            endpoint=config.s3_endpoint,
+            region=config.s3_region,
+            access_key=config.s3_access_key,
+            secret_key=config.s3_secret_key,
+            bucket=config.s3_bucket,
+        )
+    else:
+        app.state.s3_client = None
     return args
 
 def main():

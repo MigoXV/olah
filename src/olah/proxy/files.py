@@ -8,6 +8,7 @@
 import hashlib
 import json
 import os
+import logging
 from typing import Dict, List, Literal, Optional, Tuple
 from fastapi import Request
 import httpx
@@ -41,6 +42,10 @@ from olah.utils.rule_utils import check_cache_rules_hf
 from olah.utils.file_utils import make_dirs
 from olah.constants import CHUNK_SIZE, LFS_FILE_BLOCK, WORKER_API_TIMEOUT
 from olah.utils.zip_utils import Decompressor, decompress_data
+from olah.utils.s3_client import S3Client
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_block_info(pos: int, block_size: int, file_size: int) -> Tuple[int, int, int]:
@@ -172,6 +177,8 @@ async def _file_chunk_get(
     headers: Dict[str, str],
     allow_cache: bool,
     file_size: int,
+    s3_client: Optional[S3Client] = None,
+    s3_key: Optional[str] = None,
 ):
     # Redirect Chunks
     if os.path.exists(save_path):
@@ -187,6 +194,7 @@ async def _file_chunk_get(
         unit, ranges, suffix = parse_range_params(headers.get("range", f"bytes={0}-{file_size-1}"))
         all_ranges = get_all_ranges(file_size, unit, ranges, suffix)
 
+        full_file_requested = len(all_ranges) == 1 and all_ranges[0][0] == 0 and all_ranges[0][1] == file_size
         for start_pos, end_pos in all_ranges:
             ranges_and_cache_list = get_contiguous_ranges(cache_file, start_pos, end_pos)
             # Stream ranges
@@ -260,6 +268,12 @@ async def _file_chunk_get(
     finally:
         cache_file.close()
 
+    if s3_client is not None and s3_key is not None and full_file_requested:
+        try:
+            await s3_client.upload_file(s3_key, save_path)
+        except Exception as exc:  # pragma: no cover - best effort logging
+            logger.warning("Failed to upload %s to S3: %s", s3_key, exc)
+
 
 async def _file_chunk_head(
     app,
@@ -327,6 +341,8 @@ async def _file_realtime_stream(
     method="GET",
     allow_cache=True,
     commit: Optional[str] = None,
+    s3_client: Optional[S3Client] = None,
+    s3_key: Optional[str] = None,
 ):
     if check_url_has_param_name(url, ORIGINAL_LOC):
         clean_url = remove_query_param(url, ORIGINAL_LOC)
@@ -445,6 +461,8 @@ async def _file_realtime_stream(
                 headers=request_headers,
                 allow_cache=allow_cache,
                 file_size=file_size,
+                s3_client=s3_client,
+                s3_key=s3_key,
             ):
                 yield each_chunk
         elif method.lower() == "head":
@@ -495,11 +513,15 @@ async def file_get_generator(
             app.state.app_settings.config.hf_url_base(),
             f"/{org_repo}/resolve/{commit}/{file_path}",
         )
+        s3_client: Optional[S3Client] = getattr(app.state, "s3_client", None)
+        s3_key = f"{org_repo}/{file_path}"
     else:
         url = urljoin(
             app.state.app_settings.config.hf_url_base(),
             f"/{repo_type}/{org_repo}/resolve/{commit}/{file_path}",
         )
+        s3_client = None
+        s3_key = None
     return _file_realtime_stream(
         app=app,
         repo_type=repo_type,
@@ -513,6 +535,8 @@ async def file_get_generator(
         method=method,
         allow_cache=allow_cache,
         commit=commit,
+        s3_client=s3_client,
+        s3_key=s3_key,
     )
 
 
