@@ -5,10 +5,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT.
 
-from typing import Any, Dict, List, Literal, Optional, Union
-import toml
-import re
+from __future__ import annotations
+
+import dataclasses
 import fnmatch
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Literal, Optional, Union
+
+import toml
 
 from olah.utils.disk_utils import convert_to_bytes
 
@@ -23,50 +28,35 @@ DEFAULT_CACHE_RULES = [
 ]
 
 
-class OlahRule(object):
-    def __init__(self, repo: str = "", type: str = "*", allow: bool = False, use_re: bool = False) -> None:
-        self.repo = repo
-        self.type = type
-        self.allow = allow
-        self.use_re = use_re
+@dataclass
+class OlahRule:
+    repo: str = ""
+    type: str = "*"
+    allow: bool = False
+    use_re: bool = False
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "OlahRule":
-        out = OlahRule()
-        if "repo" in data:
-            out.repo = data["repo"]
-        if "allow" in data:
-            out.allow = data["allow"]
-        if "use_re" in data:
-            out.use_re = data["use_re"]
-        return out
+        return OlahRule(
+            repo=data.get("repo", ""),
+            type=data.get("type", "*"),
+            allow=data.get("allow", False),
+            use_re=data.get("use_re", False),
+        )
 
     def match(self, repo_name: str) -> bool:
         if self.use_re:
-            return self.match_re(repo_name)
-        else:
-            return self.match_fn(repo_name)
-
-    def match_fn(self, repo_name: str) -> bool:
+            return re.match(self.repo, repo_name) is not None
         return fnmatch.fnmatch(repo_name, self.repo)
 
-    def match_re(self, repo_name: str) -> bool:
-        return re.match(self.repo, repo_name) is not None
 
-
-class OlahRuleList(object):
-    def __init__(self) -> None:
-        self.rules: List[OlahRule] = []
+@dataclass
+class OlahRuleList:
+    rules: List[OlahRule] = field(default_factory=list)
 
     @staticmethod
     def from_list(data: List[Dict[str, Any]]) -> "OlahRuleList":
-        out = OlahRuleList()
-        for item in data:
-            out.rules.append(OlahRule.from_dict(item))
-        return out
-
-    def clear(self):
-        self.rules.clear()
+        return OlahRuleList([OlahRule.from_dict(item) for item in data])
 
     def allow(self, repo_name: str) -> bool:
         allow = False
@@ -75,54 +65,43 @@ class OlahRuleList(object):
                 allow = rule.allow
         return allow
 
+    def clear(self) -> None:
+        self.rules.clear()
 
-class OlahConfig(object):
-    def __init__(self, path: Optional[str] = None) -> None:
 
-        # basic
-        self.host: Union[List[str], str] = "localhost"
-        self.port = 8090
-        self.ssl_key = None
-        self.ssl_cert = None
-        self.repos_path = "./repos"
-        self.cache_size_limit: Optional[int] = None
-        self.cache_clean_strategy: Literal["LRU", "FIFO", "LARGE_FIRST"] = "LRU"
+@dataclass
+class BasicConfig:
+    host: Union[List[str], str] = "localhost"
+    port: int = 8090
+    ssl_key: Optional[str] = None
+    ssl_cert: Optional[str] = None
+    repos_path: str = "./repos"
+    cache_size_limit: Optional[int] = None
+    cache_clean_strategy: Literal["LRU", "FIFO", "LARGE_FIRST"] = "LRU"
+    hf_scheme: str = "https"
+    hf_netloc: str = "huggingface.co"
+    hf_lfs_netloc: str = "cdn-lfs.huggingface.co"
 
-        self.hf_scheme: str = "https"
-        self.hf_netloc: str = "huggingface.co"
-        self.hf_lfs_netloc: str = "cdn-lfs.huggingface.co"
+    mirror_scheme: str = dataclasses.field(default_factory=lambda: "http")
+    mirror_netloc: str = dataclasses.field(default_factory=str)
+    mirror_lfs_netloc: str = dataclasses.field(default_factory=str)
+    mirrors_path: List[str] = field(default_factory=list)
 
-        # s3 settings
-        self.s3_enable: bool = False
-        self.s3_endpoint: Optional[str] = None
-        self.s3_region: str = "us-east-1"
-        self.s3_access_key: Optional[str] = None
-        self.s3_secret_key: Optional[str] = None
-        self.s3_bucket: Optional[str] = None
+    def __post_init__(self) -> None:
+        if not self.mirror_scheme:
+            self.mirror_scheme = "http" if self.ssl_key is None else "https"
+        if not self.mirror_netloc:
+            self.mirror_netloc = self._default_netloc()
+        if not self.mirror_lfs_netloc:
+            self.mirror_lfs_netloc = self._default_netloc()
 
-        self.mirror_scheme: str = "http" if self.ssl_key is None else "https"
-        self.mirror_netloc: str = (
-            f"{self.host if self._is_specific_addr(self.host) else 'localhost'}:{self.port}"
-        )
-        self.mirror_lfs_netloc: str = (
-            f"{self.host if self._is_specific_addr(self.host) else 'localhost'}:{self.port}"
-        )
-
-        self.mirrors_path: List[str] = []
-
-        # accessibility
-        self.offline = False
-        self.proxy = OlahRuleList.from_list(DEFAULT_PROXY_RULES)
-        self.cache = OlahRuleList.from_list(DEFAULT_CACHE_RULES)
-
-        if path is not None:
-            self.read_toml(path)
-    
     def _is_specific_addr(self, host: Union[List[str], str]) -> bool:
         if isinstance(host, str):
-            return host not in ['0.0.0.0', '::']
-        else:
-            return False
+            return host not in ["0.0.0.0", "::"]
+        return False
+
+    def _default_netloc(self) -> str:
+        return f"{self.host if self._is_specific_addr(self.host) else 'localhost'}:{self.port}"
 
     def hf_url_base(self) -> str:
         return f"{self.hf_scheme}://{self.hf_netloc}"
@@ -136,48 +115,190 @@ class OlahConfig(object):
     def mirror_lfs_url_base(self) -> str:
         return f"{self.mirror_scheme}://{self.mirror_lfs_netloc}"
 
-    def empty_str(self, s: str) -> Optional[str]:
-        if s == "":
-            return None
-        else:
-            return s
 
-    def read_toml(self, path: str) -> None:
+@dataclass
+class S3Config:
+    enable: bool = False
+    endpoint: Optional[str] = None
+    region: str = "us-east-1"
+    access_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    bucket: Optional[str] = None
+
+
+@dataclass
+class AccessibilityConfig:
+    offline: bool = False
+    proxy: OlahRuleList = field(default_factory=lambda: OlahRuleList.from_list(DEFAULT_PROXY_RULES))
+    cache: OlahRuleList = field(default_factory=lambda: OlahRuleList.from_list(DEFAULT_CACHE_RULES))
+
+
+@dataclass
+class OlahConfig:
+    basic: BasicConfig = field(default_factory=BasicConfig)
+    accessibility: AccessibilityConfig = field(default_factory=AccessibilityConfig)
+    s3: S3Config = field(default_factory=S3Config)
+
+    @classmethod
+    def from_toml(cls, path: Optional[str]) -> "OlahConfig":
+        config = cls()
+        if path:
+            config.apply_toml(path)
+        return config
+
+    def apply_toml(self, path: str) -> None:
         config = toml.load(path)
 
         if "basic" in config:
             basic = config["basic"]
-            self.host = basic.get("host", self.host)
-            self.port = basic.get("port", self.port)
-            self.ssl_key = self.empty_str(basic.get("ssl-key", self.ssl_key))
-            self.ssl_cert = self.empty_str(basic.get("ssl-cert", self.ssl_cert))
-            self.repos_path = basic.get("repos-path", self.repos_path)
-            self.cache_size_limit = convert_to_bytes(basic.get("cache-size-limit", self.cache_size_limit))
-            self.cache_clean_strategy = basic.get("cache-clean-strategy", self.cache_clean_strategy)
-
-            self.hf_scheme = basic.get("hf-scheme", self.hf_scheme)
-            self.hf_netloc = basic.get("hf-netloc", self.hf_netloc)
-            self.hf_lfs_netloc = basic.get("hf-lfs-netloc", self.hf_lfs_netloc)
-
-            self.mirror_scheme = basic.get("mirror-scheme", self.mirror_scheme)
-            self.mirror_netloc = basic.get("mirror-netloc", self.mirror_netloc)
-            self.mirror_lfs_netloc = basic.get(
-                "mirror-lfs-netloc", self.mirror_lfs_netloc
+            self.basic.host = basic.get("host", self.basic.host)
+            self.basic.port = basic.get("port", self.basic.port)
+            self.basic.ssl_key = self._empty_str(basic.get("ssl-key", self.basic.ssl_key))
+            self.basic.ssl_cert = self._empty_str(basic.get("ssl-cert", self.basic.ssl_cert))
+            self.basic.repos_path = basic.get("repos-path", self.basic.repos_path)
+            self.basic.cache_size_limit = convert_to_bytes(
+                basic.get("cache-size-limit", self.basic.cache_size_limit)
             )
-
-            self.mirrors_path = basic.get("mirrors-path", self.mirrors_path)
+            self.basic.cache_clean_strategy = basic.get(
+                "cache-clean-strategy", self.basic.cache_clean_strategy
+            )
+            self.basic.hf_scheme = basic.get("hf-scheme", self.basic.hf_scheme)
+            self.basic.hf_netloc = basic.get("hf-netloc", self.basic.hf_netloc)
+            self.basic.hf_lfs_netloc = basic.get("hf-lfs-netloc", self.basic.hf_lfs_netloc)
+            self.basic.mirror_scheme = basic.get("mirror-scheme", self.basic.mirror_scheme)
+            self.basic.mirror_netloc = basic.get("mirror-netloc", self.basic.mirror_netloc)
+            self.basic.mirror_lfs_netloc = basic.get(
+                "mirror-lfs-netloc", self.basic.mirror_lfs_netloc
+            )
+            self.basic.mirrors_path = basic.get("mirrors-path", self.basic.mirrors_path)
 
         if "accessibility" in config:
             accessibility = config["accessibility"]
-            self.offline = accessibility.get("offline", self.offline)
-            self.proxy = OlahRuleList.from_list(accessibility.get("proxy", DEFAULT_PROXY_RULES))
-            self.cache = OlahRuleList.from_list(accessibility.get("cache", DEFAULT_CACHE_RULES))
+            self.accessibility.offline = accessibility.get(
+                "offline", self.accessibility.offline
+            )
+            self.accessibility.proxy = OlahRuleList.from_list(
+                accessibility.get("proxy", DEFAULT_PROXY_RULES)
+            )
+            self.accessibility.cache = OlahRuleList.from_list(
+                accessibility.get("cache", DEFAULT_CACHE_RULES)
+            )
 
         if "s3" in config:
             s3 = config["s3"]
-            self.s3_enable = s3.get("enable", self.s3_enable)
-            self.s3_endpoint = self.empty_str(s3.get("endpoint", self.s3_endpoint))
-            self.s3_region = s3.get("region", self.s3_region)
-            self.s3_access_key = self.empty_str(s3.get("access-key", self.s3_access_key))
-            self.s3_secret_key = self.empty_str(s3.get("secret-key", self.s3_secret_key))
-            self.s3_bucket = self.empty_str(s3.get("bucket", self.s3_bucket))
+            self.s3.enable = s3.get("enable", self.s3.enable)
+            self.s3.endpoint = self._empty_str(s3.get("endpoint", self.s3.endpoint))
+            self.s3.region = s3.get("region", self.s3.region)
+            self.s3.access_key = self._empty_str(s3.get("access-key", self.s3.access_key))
+            self.s3.secret_key = self._empty_str(s3.get("secret-key", self.s3.secret_key))
+            self.s3.bucket = self._empty_str(s3.get("bucket", self.s3.bucket))
+
+    @property
+    def host(self) -> Union[List[str], str]:
+        return self.basic.host
+
+    @property
+    def port(self) -> int:
+        return self.basic.port
+
+    @property
+    def ssl_key(self) -> Optional[str]:
+        return self.basic.ssl_key
+
+    @property
+    def ssl_cert(self) -> Optional[str]:
+        return self.basic.ssl_cert
+
+    @property
+    def repos_path(self) -> str:
+        return self.basic.repos_path
+
+    @property
+    def cache_size_limit(self) -> Optional[int]:
+        return self.basic.cache_size_limit
+
+    @property
+    def cache_clean_strategy(self) -> Literal["LRU", "FIFO", "LARGE_FIRST"]:
+        return self.basic.cache_clean_strategy
+
+    @property
+    def hf_scheme(self) -> str:
+        return self.basic.hf_scheme
+
+    @property
+    def hf_netloc(self) -> str:
+        return self.basic.hf_netloc
+
+    @property
+    def hf_lfs_netloc(self) -> str:
+        return self.basic.hf_lfs_netloc
+
+    @property
+    def mirror_scheme(self) -> str:
+        return self.basic.mirror_scheme
+
+    @property
+    def mirror_netloc(self) -> str:
+        return self.basic.mirror_netloc
+
+    @property
+    def mirror_lfs_netloc(self) -> str:
+        return self.basic.mirror_lfs_netloc
+
+    @property
+    def mirrors_path(self) -> List[str]:
+        return self.basic.mirrors_path
+
+    @property
+    def offline(self) -> bool:
+        return self.accessibility.offline
+
+    @property
+    def proxy(self) -> OlahRuleList:
+        return self.accessibility.proxy
+
+    @property
+    def cache(self) -> OlahRuleList:
+        return self.accessibility.cache
+
+    @property
+    def s3_enable(self) -> bool:
+        return self.s3.enable
+
+    @property
+    def s3_endpoint(self) -> Optional[str]:
+        return self.s3.endpoint
+
+    @property
+    def s3_region(self) -> str:
+        return self.s3.region
+
+    @property
+    def s3_access_key(self) -> Optional[str]:
+        return self.s3.access_key
+
+    @property
+    def s3_secret_key(self) -> Optional[str]:
+        return self.s3.secret_key
+
+    @property
+    def s3_bucket(self) -> Optional[str]:
+        return self.s3.bucket
+
+    def hf_url_base(self) -> str:
+        return self.basic.hf_url_base()
+
+    def hf_lfs_url_base(self) -> str:
+        return self.basic.hf_lfs_url_base()
+
+    def mirror_url_base(self) -> str:
+        return self.basic.mirror_url_base()
+
+    def mirror_lfs_url_base(self) -> str:
+        return self.basic.mirror_lfs_url_base()
+
+    @staticmethod
+    def _empty_str(value: Optional[str]) -> Optional[str]:
+        if value == "":
+            return None
+        return value
