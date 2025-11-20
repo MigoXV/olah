@@ -14,7 +14,7 @@ classifiers = [
 ]
 dependencies = [
     "fastapi", "fastapi-utils", "httpx", "numpy", "pydantic<=2.8.2", "pydantic-settings<=2.4.0", "requests", "toml",
-    "rich>=10.0.0", "shortuuid", "uvicorn", "tenacity>=8.2.2", "pytz", "cachetools", "GitPython",
+    "rich>=10.0.0", "shortuuid", "uvicorn", "tenacity>=8.2.2", "pytz", "cachetools", "GitPython", "typer>=0.12",
     "PyYAML", "typing_inspect>=0.9.0", "huggingface_hub", "jinja2", "python-multipart", "portalocker",
     "aiofiles", "brotli"
 ]

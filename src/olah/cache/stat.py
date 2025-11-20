@@ -5,10 +5,13 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT.
 
-import argparse
 import os
 import sys
+
+import typer
+
 from olah.cache.olah_cache import OlahCache
+
 
 def get_size_human(size: int) -> str:
     if size > 1024 * 1024 * 1024:
@@ -20,26 +23,25 @@ def get_size_human(size: int) -> str:
     else:
         return f"{size:.4f}B"
 
+
 def insert_newlines(input_str, every=10):
-    return '\n'.join(input_str[i:i+every] for i in range(0, len(input_str), every))
+    return "\n".join(input_str[i:i + every] for i in range(0, len(input_str), every))
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Olah Cache Visualization Tool.")
-    parser.add_argument("--file", "-f", type=str, required=True, help="The path of Olah cache file")
-    parser.add_argument("--export", "-e", type=str, default="", help="Export the cached file if all blocks are cached")
-    args = parser.parse_args()
-    print(args)
 
-    with open(args.file, "rb") as f:
+def main(
+    file: str = typer.Option(..., "--file", "-f", help="The path of Olah cache file"),
+    export: str = typer.Option("", "--export", "-e", help="Export the cached file if all blocks are cached"),
+):
+    with open(file, "rb") as f:
         f.seek(0, os.SEEK_END)
         bin_size = f.tell()
-    
+
     try:
-        cache = OlahCache(args.file)
+        cache = OlahCache(file)
     except Exception as e:
         print(e)
         sys.exit(1)
-    print(f"File: {args.file}")
+    print(f"File: {file}")
     print(f"Olah Cache Version: {cache.header.version}")
     print(f"File Size: {get_size_human(cache.header.file_size)}")
     print(f"Cache Total Size: {get_size_human(bin_size)}")
@@ -49,11 +51,15 @@ if __name__ == "__main__":
     cache_status = cache.header.block_mask.__str__()[:cache.header._block_number]
     print(insert_newlines(cache_status, every=50))
 
-    if args.export != "":
+    if export != "":
         if all([c == "1" for c in cache_status]):
-            with open(args.file, "rb") as f:
+            with open(file, "rb") as f:
                 f.seek(cache._get_header_size(), os.SEEK_SET)
-                with open(args.export, "wb") as fout:
+                with open(export, "wb") as fout:
                     fout.write(f.read())
         else:
             print("Some blocks are not cached, so the export is skipped.")
+
+
+if __name__ == "__main__":
+    typer.run(main)
