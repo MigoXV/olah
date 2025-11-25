@@ -7,17 +7,20 @@
 
 import os
 import traceback
-from typing import List, Optional, Tuple
 
 import git
 import httpx
-import aiofiles
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse, Response
 
-from olah.constants import CHUNK_SIZE, HUGGINGFACE_HEADER_X_REPO_COMMIT, REPO_TYPES_MAPPING
+from olah.constants import REPO_TYPES_MAPPING
 from olah.errors import error_repo_not_found, error_page_not_found
 from olah.mirror.repos import LocalMirrorRepo
+from olah.model_bin.files import (
+    get_file_path as get_model_bin_file_path,
+    build_headers as build_model_bin_headers,
+    stream_file as stream_model_bin_file,
+)
 from olah.proxy.files import cdn_file_get_generator, file_get_generator
 from olah.utils.logging import build_logger
 from olah.utils.repo_utils import (
@@ -26,60 +29,10 @@ from olah.utils.repo_utils import (
     parse_org_repo,
 )
 from olah.utils.rule_utils import check_proxy_rules_hf
-from olah.utils.url_utils import get_all_ranges, parse_range_params
 
 logger = build_logger("olah.router.files", "olah_router_files.log")
 
 router = APIRouter()
-
-
-# ======================
-# Utility functions for model bin
-# ======================
-def _get_model_bin_file_path(root_path: str, org: str, repo: str, file_path: str) -> Optional[str]:
-    normalized_root = os.path.abspath(root_path)
-    normalized_file = os.path.normpath(file_path).lstrip(os.sep)
-    candidate = os.path.abspath(os.path.join(normalized_root, org, repo, normalized_file))
-
-    if os.path.commonpath([normalized_root, candidate]) != normalized_root:
-        return None
-
-    if os.path.isfile(candidate):
-        return candidate
-
-    return None
-
-
-def _model_bin_headers(path: str, request_range: Optional[str], commit: Optional[str]) -> Tuple[dict, List[Tuple[int, int]]]:
-    file_size = os.path.getsize(path)
-    unit, ranges, suffix = parse_range_params(request_range or f"bytes=0-{file_size-1}")
-    all_ranges = get_all_ranges(file_size, unit, ranges, suffix)
-
-    headers = {
-        "content-length": str(sum(r[1] - r[0] for r in all_ranges)),
-        "content-range": f"bytes {','.join(f'{r[0]}-{r[1]-1}' for r in all_ranges)}/{file_size}"
-        if suffix is None
-        else f"bytes -{suffix}/{file_size}",
-        "etag": f'"{os.path.getmtime(path)}-{file_size}"',
-    }
-
-    if commit is not None:
-        headers[HUGGINGFACE_HEADER_X_REPO_COMMIT.lower()] = commit
-
-    return headers, all_ranges
-
-
-async def _model_bin_stream_response(path: str, ranges: List[Tuple[int, int]]):
-    async with aiofiles.open(path, "rb") as fp:
-        for start, end in ranges:
-            await fp.seek(start)
-            remaining = end - start
-            while remaining > 0:
-                chunk = await fp.read(min(CHUNK_SIZE, remaining))
-                if not chunk:
-                    break
-                remaining -= len(chunk)
-                yield chunk
 
 
 # ======================
@@ -119,11 +72,11 @@ async def file_head_common(
         and app.state.app_settings.config.model_bin_enable
         and app.state.app_settings.config.model_bin_path is not None
     ):
-        local_path = _get_model_bin_file_path(
+        local_path = get_model_bin_file_path(
             app.state.app_settings.config.model_bin_path, org, repo, file_path
         )
         if local_path:
-            headers, _ = _model_bin_headers(
+            headers, _ = build_model_bin_headers(
                 local_path, request.headers.get("range"), commit
             )
             return Response(headers=headers)
@@ -281,15 +234,15 @@ async def file_get_common(
         and app.state.app_settings.config.model_bin_enable
         and app.state.app_settings.config.model_bin_path is not None
     ):
-        local_path = _get_model_bin_file_path(
+        local_path = get_model_bin_file_path(
             app.state.app_settings.config.model_bin_path, org, repo, file_path
         )
         if local_path:
-            headers, ranges = _model_bin_headers(
+            headers, ranges = build_model_bin_headers(
                 local_path, request.headers.get("range"), commit
             )
             return StreamingResponse(
-                _model_bin_stream_response(local_path, ranges),
+                stream_model_bin_file(local_path, ranges),
                 headers=headers,
                 status_code=200,
             )

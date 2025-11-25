@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse, Response, JSONResponse
 from olah.constants import REPO_TYPES_MAPPING
 from olah.errors import error_repo_not_found, error_page_not_found, error_revision_not_found
 from olah.mirror.repos import LocalMirrorRepo
+from olah.model_bin.meta import generate_meta as generate_model_bin_meta
 from olah.proxy.meta import meta_generator
 from olah.utils.logging import build_logger
 from olah.utils.repo_utils import (
@@ -46,6 +47,23 @@ async def meta_proxy_common(
         return error_page_not_found()
     if not await check_proxy_rules_hf(app, repo_type, org, repo):
         return error_repo_not_found()
+    
+    # Check Model-bin Path (优先检查本地 model-bin 目录)
+    if (
+        repo_type == "models"
+        and app.state.app_settings.config.model_bin_enable
+        and app.state.app_settings.config.model_bin_path is not None
+    ):
+        model_bin_path = app.state.app_settings.config.model_bin_path
+        repo_path = os.path.join(model_bin_path, org, repo)
+        if os.path.isdir(repo_path):
+            meta_data = generate_model_bin_meta(
+                model_bin_path, repo_type, org, repo, commit
+            )
+            if meta_data is not None:
+                logger.info(f"Serving model-bin meta for {org}/{repo}")
+                return JSONResponse(content=meta_data)
+    
     # Check Mirror Path
     for mirror_path in app.state.app_settings.config.mirrors_path:
         git_path = os.path.join(mirror_path, repo_type, org, repo)
