@@ -11,12 +11,17 @@ Olah 应用工厂模块。
 提供不同模式的应用工厂类，用于创建和配置 FastAPI 应用。
 """
 
+import logging
+import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Optional, List
 
 import uvicorn
 
 from olah.configs import OlahConfig
+
+logger = logging.getLogger(__name__)
 
 
 class AppFactory(ABC):
@@ -132,6 +137,49 @@ class ModelBinFactory(AppFactory):
     def _create_s3_client(self, config: OlahConfig):
         """Model-bin 模式不需要 S3 客户端。"""
         return None
+
+    def _count_repos(self) -> tuple[int, list[str]]:
+        """
+        扫描 model_bin_path 目录，统计仓库数量。
+        
+        仓库结构: <model_bin_path>/<org>/<repo>/
+        
+        Returns:
+            (仓库数量, 仓库列表)
+        """
+        repos = []
+        root = Path(self.model_bin_path)
+        
+        if not root.exists():
+            return 0, []
+        
+        for org_dir in root.iterdir():
+            if org_dir.is_dir() and not org_dir.name.startswith('.'):
+                for repo_dir in org_dir.iterdir():
+                    if repo_dir.is_dir() and not repo_dir.name.startswith('.'):
+                        repos.append(f"{org_dir.name}/{repo_dir.name}")
+        
+        return len(repos), repos
+
+    def run(self):
+        """创建应用并启动服务器，打印仓库信息。"""
+        _, config = self.create_app()
+        
+        # 打印 model-bin 模式启动信息
+        abs_path = os.path.abspath(self.model_bin_path)
+        repo_count, repo_list = self._count_repos()
+        
+        logger.info("=" * 60)
+        logger.info("Model-bin 模式启动")
+        logger.info(f"仓库根目录: {abs_path}")
+        logger.info(f"仓库数量: {repo_count}")
+        if repo_count > 0:
+            logger.info("仓库列表:")
+            for repo in repo_list:
+                logger.info(f"  - {repo}")
+        logger.info("=" * 60)
+        
+        self._run_server(config)
 
 
 class ProxyFactory(AppFactory):
