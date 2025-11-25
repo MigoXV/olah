@@ -16,7 +16,7 @@ def error_repo_not_found() -> JSONResponse:
             "x-error-code": "RepoNotFound",
             "x-error-message": "Repository not found",
         },
-        status_code=401,
+        status_code=404,
     )
 
 
