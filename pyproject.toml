@@ -1,37 +1,46 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "olah"
 version = "0.4.1"
 description = "Self-hosted lightweight huggingface mirror."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10,<3.13"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-    "fastapi", "fastapi-utils", "httpx", "numpy", "pydantic<=2.8.2", "pydantic-settings<=2.4.0", "requests", "toml",
-    "rich>=10.0.0", "shortuuid", "uvicorn", "tenacity>=8.2.2", "pytz", "cachetools", "GitPython", "typer>=0.12",
-    "PyYAML", "typing_inspect>=0.9.0", "huggingface_hub", "jinja2", "python-multipart", "portalocker",
-    "aiofiles", "brotli"
+    "fastapi (>=0.122.0,<0.123.0)",
+    "fastapi-utils (>=0.8.0,<0.9.0)",
+    "gitpython (>=3.1.45,<4.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "pydantic (>=2.12.4,<3.0.0)",
+    "pydantic-settings (>=2.12.0,<3.0.0)",
+    "toml (>=0.10.2,<0.11.0)",
+    "huggingface-hub (>=1.1.5,<2.0.0)",
+    "pytest (>=9.0.1,<10.0.0)",
+    "cachetools (>=6.2.2,<7.0.0)",
+    "pyyaml (>=6.0.3,<7.0.0)",
+    "tenacity (>=9.1.2,<10.0.0)",
+    "peewee (>=3.18.3,<4.0.0)",
+    "typing-inspect (>=0.9.0,<0.10.0)",
+    "jinja2 (>=3.1.6,<4.0.0)",
+    "python-multipart (>=0.0.20,<0.0.21)",
+    "portalocker (>=3.2.0,<4.0.0)",
+    "aiofiles (>=25.1.0,<26.0.0)",
+    "typer (>=0.20.0,<0.21.0)",
+    "uvicorn (>=0.38.0,<0.39.0)",
+    "brotli (>=1.2.0,<2.0.0)",
+    "tqdm (>=4.67.1,<5.0.0)"
 ]
 
-[project.optional-dependencies]
-dev = ["black==24.10.0", "pylint==3.3.1", "pytest==8.3.3"]
 
 [project.urls]
 "Homepage" = "https://github.com/vtuber-plan/olah"
 "Bug Tracker" = "https://github.com/vtuber-plan/olah/issues"
 
 [project.scripts]
-olah-cli = "olah.server:cli"
+olah-cli = "olah.commands.app:cli"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-exclude = ["assets*", "benchmark*", "docs", "dist*", "playground*", "scripts*", "tests*"]
-
-[tool.wheel]
-exclude = ["assets*", "benchmark*", "docs", "dist*", "playground*", "scripts*", "tests*"]
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

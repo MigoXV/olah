@@ -9,6 +9,15 @@
             "console": "integratedTerminal",
             "args": ["-c", "${workspaceFolder}/assets/full_configs.toml"],
             "justMyCode": false
+        },
+        {
+            "name": "debugpy: model-bin",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "olah.commands.app",
+            "console": "integratedTerminal",
+            "args": ["model-bin", "--path", "${workspaceFolder}/model-bin"],
+            "justMyCode": false
         }
     ]
 }

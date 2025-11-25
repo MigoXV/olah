@@ -2,6 +2,14 @@
 __pycache__/
 *.py[cod]
 *$py.class
+data-bin/
+model-bin/
+outputs/
+wandb/
+tmp_workspace/
+tmp-workspace/
+.hydra
+nohup.out
 
 # C extensions
 *.so
