@@ -19,13 +19,19 @@ from olah.commands.factory import ModelBinFactory
 
 
 def model_bin(
-    model_bin_path: str = typer.Option(
-        ..., "--path", "-p", help="本地模型二进制文件根目录"
+    model_bin: str = typer.Option(
+        ...,
+        envvar="OLAH_MODEL_BIN",
+        help="本地模型二进制文件根目录",
     ),
-    host: str = typer.Option("0.0.0.0", help="服务器绑定地址"),
-    port: int = typer.Option(8090, help="服务器绑定端口"),
-    ssl_key: Optional[str] = typer.Option(None, help="SSL 密钥文件路径"),
-    ssl_cert: Optional[str] = typer.Option(None, help="SSL 证书文件路径"),
+    host: str = typer.Option("0.0.0.0", envvar="OLAH_HOST", help="服务器绑定地址"),
+    port: int = typer.Option(8090, envvar="OLAH_PORT", help="服务器绑定端口"),
+    ssl_key: Optional[str] = typer.Option(
+        None, envvar="OLAH_SSL_KEY", help="SSL 密钥文件路径"
+    ),
+    ssl_cert: Optional[str] = typer.Option(
+        None, envvar="OLAH_SSL_CERT", help="SSL 证书文件路径"
+    ),
 ):
     """
     以 MODEL-BIN 模式启动 Olah（纯本地模式）。
@@ -34,7 +40,7 @@ def model_bin(
     目录结构: <model_bin_path>/<org>/<repo>/<file_path>
     """
     factory = ModelBinFactory(
-        model_bin_path=model_bin_path,
+        model_bin_path=model_bin,
         host=host,
         port=port,
         ssl_key=ssl_key,
