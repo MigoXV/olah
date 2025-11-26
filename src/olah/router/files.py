@@ -11,9 +11,9 @@ import traceback
 import git
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response
 
-from olah.constants import REPO_TYPES_MAPPING
+from olah.constants import HUGGINGFACE_HEADER_X_REPO_COMMIT, REPO_TYPES_MAPPING
 from olah.errors import error_repo_not_found, error_page_not_found
 from olah.mirror.repos import LocalMirrorRepo
 from olah.model_bin.files import (
@@ -238,13 +238,24 @@ async def file_get_common(
             app.state.app_settings.config.model_bin_path, org, repo, file_path
         )
         if local_path:
+            range_header = request.headers.get("range")
+            
+            # 完整文件下载：使用 FileResponse（利用 sendfile 零拷贝）
+            if range_header is None:
+                return FileResponse(
+                    path=local_path,
+                    headers={HUGGINGFACE_HEADER_X_REPO_COMMIT.lower(): commit} if commit else {},
+                    filename=local_path.name,
+                )
+            
+            # Range 请求：使用流式传输
             headers, ranges = build_model_bin_headers(
-                local_path, request.headers.get("range"), commit
+                local_path, range_header, commit
             )
             return StreamingResponse(
                 stream_model_bin_file(local_path, ranges),
                 headers=headers,
-                status_code=200,
+                status_code=206,
             )
     try:
         if not app.state.app_settings.config.offline and not await check_commit_hf(

@@ -16,8 +16,12 @@ from typing import AsyncGenerator, List, Optional, Tuple
 
 import aiofiles
 
-from olah.constants import CHUNK_SIZE, HUGGINGFACE_HEADER_X_REPO_COMMIT
+from olah.constants import HUGGINGFACE_HEADER_X_REPO_COMMIT
 from olah.utils.url_utils import get_all_ranges, parse_range_params
+
+# Model-bin 专用的大块传输大小 (1MB)
+# 相比全局的 4KB CHUNK_SIZE，大幅减少系统调用次数，提升传输速度
+MODEL_BIN_CHUNK_SIZE = 16 * 1024 * 1024  # 1MB
 
 
 def get_file_path(root_path: str, org: str, repo: str, file_path: str) -> Optional[Path]:
@@ -91,26 +95,30 @@ def build_headers(
 
 async def stream_file(
     path: Path, 
-    ranges: List[Tuple[int, int]]
+    ranges: List[Tuple[int, int]],
+    chunk_size: int = MODEL_BIN_CHUNK_SIZE,
 ) -> AsyncGenerator[bytes, None]:
     """
     异步流式读取文件内容。
     
     支持 HTTP Range 请求，可以读取文件的指定范围。
+    使用大块读取 (默认 1MB) 以最大化传输速度。
     
     Args:
         path: 文件 Path 对象
         ranges: 要读取的字节范围列表，每个元素为 (start, end) 元组
+        chunk_size: 每次读取的块大小，默认 1MB
     
     Yields:
         文件内容的字节块
     """
-    async with aiofiles.open(path, "rb") as fp:
+    async with aiofiles.open(path, "rb", buffering=chunk_size) as fp:
         for start, end in ranges:
             await fp.seek(start)
             remaining = end - start
             while remaining > 0:
-                chunk = await fp.read(min(CHUNK_SIZE, remaining))
+                to_read = min(chunk_size, remaining)
+                chunk = await fp.read(to_read)
                 if not chunk:
                     break
                 remaining -= len(chunk)
