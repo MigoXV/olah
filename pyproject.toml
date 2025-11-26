@@ -33,6 +33,10 @@ dependencies = [
     "tqdm (>=4.67.1,<5.0.0)"
 ]
 
+[[tool.poetry.source]]
+name = "tuna"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+priority = "primary"
 
 [project.urls]
 "Homepage" = "https://github.com/vtuber-plan/olah"
