@@ -22,4 +22,4 @@ RUN poetry install
 EXPOSE 8090
 
 # 默认入口
-CMD ["poetry", "run", "python", "-m", "olah.commands.app", "--help"]
+CMD ["poetry", "run", "python", "-m", "olah.commands.app", "model-bin"]

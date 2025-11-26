@@ -43,7 +43,7 @@ priority = "primary"
 "Bug Tracker" = "https://github.com/vtuber-plan/olah/issues"
 
 [project.scripts]
-olah-cli = "olah.commands.app:cli"
+olah-cli = "olah.commands.app:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
