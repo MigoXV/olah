@@ -115,7 +115,8 @@ def parse_range_params(range_header: str) -> Tuple[str, List[Tuple[Optional[int]
         if '-' not in range_spec:
             raise ValueError("Invalid range specifier")
 
-        start, end = range_spec.split('-')
+        # Use maxsplit=1 to handle cases where the range contains multiple '-' characters
+        start, end = range_spec.split('-', maxsplit=1)
         start = start.strip()
         end = end.strip()
 

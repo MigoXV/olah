@@ -446,7 +446,9 @@ async def _file_realtime_stream(
         yield error_response.body
         return
     else:
-        yield 200
+        # Return 206 for partial content (Range request), 200 for full content
+        has_range_header = "range" in request_headers
+        yield 206 if has_range_header else 200
         yield response_headers
 
     async with httpx.AsyncClient() as client:
